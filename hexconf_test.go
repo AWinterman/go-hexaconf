@@ -16,6 +16,40 @@ func (t testEnv) LookupEnv(s string) (string, bool) {
 	return v, ok
 }
 
+func TestReadComplicated(t *testing.T) {
+	type Config struct {
+		Items     []string          `env:"ITEMS"`
+		Key       []byte            `env:"KEY"`
+		Objects   map[string]string `env:"OBJECTS"` // gets ignored
+		SubStruct struct {
+			A string `env:"A"`
+			B int    `env:"B"`
+		}
+	}
+
+	if err := errors.Join(
+		os.Setenv("ITEMS", "abc,commas,are,ignored"),
+		os.Setenv("KEY", "i donno mang"),
+		os.Setenv("A", "3"),
+		os.Setenv("B", "3"),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	envConf := &Config{SubStruct: struct {
+		A string `env:"A"`
+		B int    `env:"B"`
+	}{}}
+	err := Read(envConf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	is := is.New(t)
+	is.Equal(envConf.Items, []string{"abc,commas,are,ignored"})
+	is.Equal(envConf.SubStruct.A, "3")
+	is.Equal(envConf.SubStruct.B, 3)
+}
+
 func TestRead(t *testing.T) {
 	err := errors.Join(
 		os.Setenv("A", "alpha"),

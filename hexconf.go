@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -38,8 +37,17 @@ func Read(into any, files ...string) error {
 	return nil
 }
 
+// Setter is implemented by types can self-deserialize values.
+// Any type that implements flag.Value also implements Setter.
+type Setter interface {
+	Set(value string) error
+}
+
+// LookupEnv is a function that looks up an environment variable by name.
+// It is provided to allow for convenient doubling of os env
 type LookupEnv func(string) (string, bool)
 
+// EnvLooker is an interface that allows for flexible environment variable lookup.
 type EnvLooker interface {
 	LookupEnv(string) (string, bool)
 }
@@ -49,6 +57,7 @@ func (l LookupEnv) LookupEnv(s string) (string, bool) {
 	return l(s)
 }
 
+// readEnv reads environment variables and sets the fields of the provided struct.
 func readEnv(into any, env EnvLooker) error {
 	rv := reflect.ValueOf(into)
 
@@ -63,90 +72,4 @@ func readEnv(into any, env EnvLooker) error {
 	rv = rv.Elem()
 
 	return setFields(rv, env)
-}
-
-func setFields(rv reflect.Value, env EnvLooker) error {
-	for i := 0; i < rv.NumField(); i++ {
-		rf := rv.Field(i)
-		tags := rv.Type().Field(i).Tag
-		set := setter(rf.Kind(), env)
-		v, ok := env.LookupEnv(tags.Get("env"))
-		if !ok {
-			continue
-		}
-		err := set(rf, v)
-		if err != nil {
-			return fmt.Errorf("%w setting %q to %q", err, rf.Type().Field(i).Name, v)
-		}
-
-	}
-	return nil
-}
-
-func intSetter(rv reflect.Value, v string) error {
-	integer, err := strconv.ParseInt(v, 0, 0)
-	if err != nil {
-		return fmt.Errorf("%w converting %q to int", err, v)
-	}
-	rv.SetInt(integer)
-	return nil
-}
-
-func uintSetter(rv reflect.Value, v string) error {
-	integer, err := strconv.ParseUint(v, 0, 0)
-	if err != nil {
-		return fmt.Errorf("%w converting %q to int", err, v)
-	}
-	rv.SetUint(integer)
-	return nil
-}
-
-func setter(kind reflect.Kind, env EnvLooker) func(reflect.Value, string) error {
-	return map[reflect.Kind]func(reflect.Value, string) error{
-		reflect.String: func(rv reflect.Value, v string) error {
-			rv.SetString(v)
-			return nil
-		},
-		reflect.Int:    intSetter,
-		reflect.Int8:   intSetter,
-		reflect.Int16:  intSetter,
-		reflect.Int32:  intSetter,
-		reflect.Int64:  intSetter,
-		reflect.Uint:   uintSetter,
-		reflect.Uint8:  uintSetter,
-		reflect.Uint16: uintSetter,
-		reflect.Uint32: uintSetter,
-		reflect.Uint64: uintSetter,
-		reflect.Bool: func(rv reflect.Value, v string) error {
-			b, err := strconv.ParseBool(v)
-			if err != nil {
-				return err
-			}
-			rv.SetBool(b)
-			return nil
-		},
-		reflect.Invalid:       unsupportedType,
-		reflect.Uintptr:       unsupportedType,
-		reflect.Float32:       skip,
-		reflect.Float64:       skip,
-		reflect.Complex64:     skip,
-		reflect.Complex128:    skip,
-		reflect.Array:         skip,
-		reflect.Chan:          skip,
-		reflect.Func:          skip,
-		reflect.Interface:     skip,
-		reflect.Map:           skip,
-		reflect.Pointer:       skip,
-		reflect.Slice:         skip,
-		reflect.Struct:        skip,
-		reflect.UnsafePointer: skip,
-	}[kind]
-}
-
-func skip(reflect.Value, string) error {
-	return nil
-}
-
-func unsupportedType(rv reflect.Value, _ string) error {
-	return fmt.Errorf("unsupported type %s", rv.Type().Kind())
 }

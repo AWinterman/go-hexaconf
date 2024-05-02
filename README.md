@@ -1,5 +1,7 @@
 # hexconf
 
+[![Go Reference](https://pkg.go.dev/badge/gitlab.com/wintersparkle/go-hexconf.svg)](https://pkg.go.dev/gitlab.com/wintersparkle/go-hexconf)
+
 When you configure process, there are basically three (possibly four) options
 
 1. Load environment variables
@@ -28,6 +30,3 @@ unsuitable to complex configs that some apps may required.
 ## Usage
 
 See ./example_test.go for usage.
-
-
-

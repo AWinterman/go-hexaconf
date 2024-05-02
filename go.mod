@@ -1,4 +1,4 @@
-module hexconf
+module gitlab.com/wintersparkle/go-hexaconf
 
 go 1.22.0
 

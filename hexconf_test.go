@@ -2,6 +2,7 @@ package hexconf
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"testing"
 
@@ -137,4 +138,61 @@ func TestReadEnv(t *testing.T) {
 	if u != expected {
 		t.Fatalf("expected equality; got %+v", u)
 	}
+}
+
+// NetFlagValue is an example of a type that implements Setter
+type NetFlagValue struct {
+	url.URL
+}
+
+// Set implements flag.Value
+func (v *NetFlagValue) Set(s string) error {
+	u, err := url.Parse(s)
+	if err != nil {
+		return err
+	}
+	if v == nil {
+		v = &NetFlagValue{}
+	}
+
+	v.URL = *u
+	return nil
+}
+
+type Tricksy string
+
+func (t *Tricksy) Set(s string) error {
+	*t = Tricksy(s)
+	return nil
+}
+
+func TestSetter(t *testing.T) {
+	type Config struct {
+		URL     *NetFlagValue `env:"URL"`
+		Tricksy Tricksy       `env:"URL"`
+	}
+
+	err := os.Setenv("URL", "amqp://super:secret@localhost:5672")
+	if err != nil {
+		t.Fatalf("could not set env: %v", err)
+	}
+	conf := &Config{URL: &NetFlagValue{}, Tricksy: Tricksy("")}
+
+	err = Read(conf)
+	// flag.Parse() would populate based on command line flags
+	if err != nil {
+		t.Fatalf("could not read conf: %v", err)
+	}
+
+	if conf.URL == nil {
+		t.Fatalf("URL is nil")
+	}
+	parse, err := url.Parse("amqp://super:secret@localhost:5672")
+	if err != nil {
+		t.Fatalf("could not parse URL: %v", err)
+	}
+	is := is.New(t)
+	is.Equal(conf.URL, &NetFlagValue{*parse})
+	is.Equal(string(conf.Tricksy), "amqp://super:secret@localhost:5672")
+
 }

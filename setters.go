@@ -16,14 +16,6 @@ func setFields(rv reflect.Value, env envLooker) error {
 		tags := typ.Tag
 		envVar, hasTag := tags.Lookup("env")
 
-		ok, err := trySetterInterface(rv, envVar)
-		if err != nil {
-			return err
-		}
-		if ok {
-			continue
-		}
-
 		if typ.Type.Kind() == reflect.Struct {
 			err := setFields(rf, env)
 			if err != nil {
@@ -42,10 +34,9 @@ func setFields(rv reflect.Value, env envLooker) error {
 
 		set := getSetterFor(rf.Kind(), env)
 
-		err = set(rf, v)
+		err := set(rf, v)
 		if err != nil {
-			// return fmt.Errorf("%w setting %q to %q", err, rf.Type().Field(i).Name, v)
-			panic("oh no")
+			return fmt.Errorf("%w setting %q to %q", err, typ.Name, v)
 		}
 
 	}
@@ -54,6 +45,7 @@ func setFields(rv reflect.Value, env envLooker) error {
 
 // getSetterFor returns a function that can set the value of a field of the provided kind.
 func getSetterFor(kind reflect.Kind, env envLooker) func(reflect.Value, string) error {
+
 	fns := map[reflect.Kind]func(reflect.Value, string) error{
 		reflect.String: func(rv reflect.Value, v string) error {
 			rv.SetString(v)
@@ -129,6 +121,13 @@ func parseFloat(rv reflect.Value, v string) error {
 
 func structSetter(env envLooker) func(reflect.Value, string) error {
 	return func(rv reflect.Value, v string) error {
+		ok, err := trySetterInterface(rv, v)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
 		return setFields(rv, env)
 	}
 }
@@ -162,16 +161,20 @@ func skip(rv reflect.Value, v string) error {
 }
 
 func unsupportedType(rv reflect.Value, _ string) error {
-	return fmt.Errorf("unsupported type %s", rv.Type().Kind())
+	return fmt.Errorf("unsupported type %s", rv.Kind())
 }
 
 func deref(env envLooker) func(reflect.Value, string) error {
 	return func(rv reflect.Value, v string) error {
-		return getSetterFor(rv.Elem().Kind(), env)(rv.Elem(), v)
+		elem := rv.Elem()
+		if rv.Kind() == reflect.Invalid {
+			return unsupportedType(rv, v)
+		}
+		return getSetterFor(elem.Kind(), env)(elem, v)
 	}
 }
 
-func trySetterInterface(field reflect.Value, v string) (bool, error) {
+func trySetterInterface(field reflect.Value, value string) (bool, error) {
 	if !field.CanInterface() {
 		return false, nil
 	}
@@ -179,14 +182,18 @@ func trySetterInterface(field reflect.Value, v string) (bool, error) {
 	var s Setter
 	var ok bool
 
+	// is it directly a Setter?
 	s, ok = field.Interface().(Setter)
 
 	if !ok && field.CanAddr() {
+		// is it a pointer to it a Setter?
 		s, _ = (field.Addr().Interface()).(Setter)
 	}
-	if s == nil {
-		return false, nil
+
+	err := s.Set(value)
+	if err != nil {
+		return false, err
 	}
 
-	return true, s.Set(v)
+	return true, nil
 }

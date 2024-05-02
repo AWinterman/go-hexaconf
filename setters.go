@@ -8,13 +8,21 @@ import (
 )
 
 // setFields iterates the fields of the provided struct, extracting
-func setFields(rv reflect.Value, env EnvLooker) error {
+func setFields(rv reflect.Value, env envLooker) error {
 	for i := 0; i < rv.NumField(); i++ {
 		rf := rv.Field(i)
 		typ := rv.Type().Field(i)
 
 		tags := typ.Tag
 		envVar, hasTag := tags.Lookup("env")
+
+		ok, err := trySetterInterface(rv, envVar)
+		if err != nil {
+			return err
+		}
+		if ok {
+			continue
+		}
 
 		if typ.Type.Kind() == reflect.Struct {
 			err := setFields(rf, env)
@@ -34,7 +42,7 @@ func setFields(rv reflect.Value, env EnvLooker) error {
 
 		set := getSetterFor(rf.Kind(), env)
 
-		err := set(rf, v)
+		err = set(rf, v)
 		if err != nil {
 			// return fmt.Errorf("%w setting %q to %q", err, rf.Type().Field(i).Name, v)
 			panic("oh no")
@@ -45,7 +53,7 @@ func setFields(rv reflect.Value, env EnvLooker) error {
 }
 
 // getSetterFor returns a function that can set the value of a field of the provided kind.
-func getSetterFor(kind reflect.Kind, env EnvLooker) func(reflect.Value, string) error {
+func getSetterFor(kind reflect.Kind, env envLooker) func(reflect.Value, string) error {
 	fns := map[reflect.Kind]func(reflect.Value, string) error{
 		reflect.String: func(rv reflect.Value, v string) error {
 			rv.SetString(v)
@@ -119,13 +127,13 @@ func parseFloat(rv reflect.Value, v string) error {
 	return nil
 }
 
-func structSetter(env EnvLooker) func(reflect.Value, string) error {
+func structSetter(env envLooker) func(reflect.Value, string) error {
 	return func(rv reflect.Value, v string) error {
 		return setFields(rv, env)
 	}
 }
 
-func getSliceSetter(env EnvLooker) func(reflect.Value, string) error {
+func getSliceSetter(env envLooker) func(reflect.Value, string) error {
 	return func(rv reflect.Value, v string) error {
 		typ := rv.Type()
 		var sl reflect.Value
@@ -157,8 +165,28 @@ func unsupportedType(rv reflect.Value, _ string) error {
 	return fmt.Errorf("unsupported type %s", rv.Type().Kind())
 }
 
-func deref(env EnvLooker) func(reflect.Value, string) error {
+func deref(env envLooker) func(reflect.Value, string) error {
 	return func(rv reflect.Value, v string) error {
 		return getSetterFor(rv.Elem().Kind(), env)(rv.Elem(), v)
 	}
+}
+
+func trySetterInterface(field reflect.Value, v string) (bool, error) {
+	if !field.CanInterface() {
+		return false, nil
+	}
+
+	var s Setter
+	var ok bool
+
+	s, ok = field.Interface().(Setter)
+
+	if !ok && field.CanAddr() {
+		s, _ = (field.Addr().Interface()).(Setter)
+	}
+	if s == nil {
+		return false, nil
+	}
+
+	return true, s.Set(v)
 }

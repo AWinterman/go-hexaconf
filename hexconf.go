@@ -29,7 +29,7 @@ func Read(into any, files ...string) error {
 		}
 	}
 
-	err := readEnv(into, LookupEnv(os.LookupEnv))
+	err := readEnv(into, lookupEnv(os.LookupEnv))
 	if err != nil {
 		return fmt.Errorf("%w reading environment variables", err)
 	}
@@ -43,22 +43,22 @@ type Setter interface {
 	Set(value string) error
 }
 
-// LookupEnv is a function that looks up an environment variable by name.
+// lookupEnv is a function that looks up an environment variable by name.
 // It is provided to allow for convenient doubling of os env
-type LookupEnv func(string) (string, bool)
+type lookupEnv func(string) (string, bool)
 
-// EnvLooker is an interface that allows for flexible environment variable lookup.
-type EnvLooker interface {
+// envLooker is an interface that allows for flexible environment variable lookup.
+type envLooker interface {
 	LookupEnv(string) (string, bool)
 }
 
 // LookupEnv implements EnvLooker
-func (l LookupEnv) LookupEnv(s string) (string, bool) {
+func (l lookupEnv) LookupEnv(s string) (string, bool) {
 	return l(s)
 }
 
 // readEnv reads environment variables and sets the fields of the provided struct.
-func readEnv(into any, env EnvLooker) error {
+func readEnv(into any, env envLooker) error {
 	rv := reflect.ValueOf(into)
 
 	if rv.Type().Kind() == reflect.Interface {
